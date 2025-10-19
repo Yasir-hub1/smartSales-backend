@@ -38,7 +38,6 @@ def get_sale_data(request, sale_id):
         sale_data = {
             'id': str(sale.id),
             'subtotal': float(sale.subtotal),
-            'tax': float(sale.tax),
             'discount': float(sale.discount),
             'total': float(sale.total),
             'status': sale.status,

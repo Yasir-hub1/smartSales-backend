@@ -218,7 +218,6 @@ class SaleReceiptPDFService:
         # Tabla de totales
         totals_data = [
             ['Subtotal:', f"${sale.subtotal:.2f}"],
-            ['Impuestos (16%):', f"${sale.tax:.2f}"],
             ['Descuento:', f"${sale.discount:.2f}"],
             ['TOTAL:', f"${sale.total:.2f}"]
         ]

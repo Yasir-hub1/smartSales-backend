@@ -7,6 +7,7 @@ from django.db.models import Q, Count, Sum, Avg
 from django.utils import timezone
 from datetime import datetime, timedelta
 from .models import Cart, CartItem, Sale, SaleItem, SaleReceipt
+from apps.clients.models import Client
 from .serializers import (
     CartSerializer, CartItemSerializer, AddToCartSerializer, UpdateCartItemSerializer,
     SaleSerializer, CreateSaleSerializer, SaleReceiptSerializer, SaleStatsSerializer
@@ -159,6 +160,78 @@ class SaleListCreateView(generics.ListCreateAPIView):
     
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+    
+    def create(self, request, *args, **kwargs):
+        """Crear venta con manejo de cliente"""
+        try:
+            # Obtener datos del request
+            data = request.data.copy()
+            client_data = data.get('client', {})
+            
+            # Si se proporciona información del cliente, crear o obtener cliente
+            if isinstance(client_data, dict) and client_data.get('name'):
+                client = self._get_or_create_client(client_data)
+                data['client'] = client.id
+            elif isinstance(client_data, (int, str)):
+                # Si es un ID, verificar que existe
+                try:
+                    client = Client.objects.get(id=client_data)
+                except Client.DoesNotExist:
+                    return Response({'error': 'Cliente no encontrado'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Calcular totales si no se proporcionan
+            if 'items' in data and not data.get('total'):
+                total = sum(item.get('price', 0) * item.get('quantity', 0) for item in data['items'])
+                data['subtotal'] = total
+                data['total'] = total
+            
+            # Establecer valores por defecto
+            data.setdefault('status', 'completed')
+            data.setdefault('payment_status', 'paid')
+            data.setdefault('discount', 0)
+            
+            serializer = self.get_serializer(data=data)
+            serializer.is_valid(raise_exception=True)
+            sale = serializer.save(user=request.user)
+            
+            # Crear comprobante
+            SaleReceipt.objects.create(
+                sale=sale,
+                receipt_number=f"NV-{sale.id}",
+                qr_code=f"https://smartsales365.com/receipt/{sale.id}"
+            )
+            
+            return Response(SaleSerializer(sale).data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    def _get_or_create_client(self, client_data):
+        """Obtener o crear cliente"""
+        try:
+            # Buscar por email primero
+            if client_data.get('email'):
+                client = Client.objects.get(email=client_data['email'])
+                # Actualizar datos si es necesario
+                if client_data.get('name') and client.name != client_data['name']:
+                    client.name = client_data['name']
+                if client_data.get('phone') and client.phone != client_data['phone']:
+                    client.phone = client_data['phone']
+                client.save()
+                return client
+        except Client.DoesNotExist:
+            pass
+        
+        # Si no existe, crear nuevo cliente
+        return Client.objects.create(
+            name=client_data.get('name', 'Cliente'),
+            email=client_data.get('email', ''),
+            phone=client_data.get('phone', ''),
+            address=client_data.get('address', ''),
+            city=client_data.get('city', ''),
+            country=client_data.get('country', 'México'),
+            user=None  # Cliente administrativo
+        )
 
 
 class SaleDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -236,8 +309,7 @@ def create_sale_from_cart(request, cart_id):
         'client': cart.client,
         'user': request.user,
         'subtotal': cart.total_amount,
-        'tax': cart.total_amount * 0.16,  # 16% IVA
-        'total': cart.total_amount * 1.16,
+        'total': cart.total_amount,
         'status': 'completed',
         'payment_status': 'paid',
         'items': []
@@ -337,8 +409,7 @@ def checkout_cart(request):
         'client': client.id,
         'user': request.user.id if request.user.is_authenticated else None,
         'subtotal': float(cart.total_amount),
-        'tax': float(cart.total_amount) * 0.16,  # 16% IVA
-        'total': float(cart.total_amount) * 1.16,
+        'total': float(cart.total_amount),
         'status': 'completed',
         'payment_status': 'paid',
         'transaction_id': stripe_payment_intent_id if payment_method == 'stripe' else '',

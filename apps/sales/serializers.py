@@ -67,6 +67,20 @@ class SaleItemSerializer(serializers.ModelSerializer):
         ]
 
 
+class CreateSaleItemSerializer(serializers.Serializer):
+    """Serializer para crear items de venta"""
+    product = serializers.IntegerField()
+    quantity = serializers.IntegerField(min_value=1)
+    price = serializers.DecimalField(max_digits=10, decimal_places=2)
+    
+    def validate_product(self, value):
+        try:
+            Product.objects.get(id=value, is_active=True)
+        except Product.DoesNotExist:
+            raise serializers.ValidationError("Producto no encontrado o inactivo")
+        return value
+
+
 class SaleSerializer(serializers.ModelSerializer):
     """Serializer para ventas"""
     items = SaleItemSerializer(many=True, read_only=True)
@@ -86,12 +100,12 @@ class SaleSerializer(serializers.ModelSerializer):
 
 class CreateSaleSerializer(serializers.ModelSerializer):
     """Serializer para crear venta"""
-    items = SaleItemSerializer(many=True)
+    items = CreateSaleItemSerializer(many=True)
     
     class Meta:
         model = Sale
         fields = [
-            'client', 'subtotal', 'tax', 'discount', 'total',
+            'client', 'subtotal', 'discount', 'total',
             'status', 'payment_status', 'notes', 'items'
         ]
     
@@ -100,11 +114,16 @@ class CreateSaleSerializer(serializers.ModelSerializer):
         sale = Sale.objects.create(**validated_data)
         
         for item_data in items_data:
-            SaleItem.objects.create(sale=sale, **item_data)
+            SaleItem.objects.create(
+                sale=sale,
+                product_id=item_data['product'],
+                quantity=item_data['quantity'],
+                price=item_data['price']
+            )
         
         # Actualizar stock de productos
         for item_data in items_data:
-            product = Product.objects.get(id=item_data['product'].id)
+            product = Product.objects.get(id=item_data['product'])
             product.stock -= item_data['quantity']
             product.save()
         

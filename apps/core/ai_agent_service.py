@@ -338,8 +338,7 @@ Responde al usuario de manera natural y útil, sin mostrar código técnico.
                 })
             
             subtotal = float(cart.total_amount)
-            tax = subtotal * 0.16
-            final_total = subtotal + tax
+            final_total = subtotal
             
             return {
                 'success': True,
@@ -348,9 +347,8 @@ Responde al usuario de manera natural y útil, sin mostrar código técnico.
                     'items': items,
                     'total_items': cart.total_items,
                     'subtotal': subtotal,
-                    'tax': tax,
                     'final_total': final_total,
-                    'summary': f"Tu carrito tiene {cart.total_items} productos. Subtotal: ${subtotal:.2f}, IVA: ${tax:.2f}, Total: ${final_total:.2f}"
+                    'summary': f"Tu carrito tiene {cart.total_items} productos. Subtotal: ${subtotal:.2f}, Total: ${final_total:.2f}"
                 }
             }
             
@@ -361,7 +359,6 @@ Responde al usuario de manera natural y útil, sin mostrar código técnico.
                     'items': [],
                     'total_items': 0,
                     'total_amount': 0,
-                    'tax': 0,
                     'final_total': 0
                 }
             }
@@ -388,8 +385,7 @@ Responde al usuario de manera natural y útil, sin mostrar código técnico.
             
             # Calcular totales
             subtotal = float(cart.total_amount)
-            tax = subtotal * 0.16
-            final_total = subtotal + tax
+            final_total = subtotal
             
             # Crear venta en el sistema
             from apps.sales.models import Sale, SaleItem
@@ -418,7 +414,6 @@ Responde al usuario de manera natural y útil, sin mostrar código técnico.
             sale = Sale.objects.create(
                 client=client,
                 subtotal=subtotal,
-                tax=tax,
                 total=final_total,
                 status='completed',
                 payment_status='paid',
@@ -455,7 +450,6 @@ Responde al usuario de manera natural y útil, sin mostrar código técnico.
                     'sale_id': str(sale.id),
                     'cart_id': str(cart.id),
                     'subtotal': subtotal,
-                    'tax': tax,
                     'total': final_total,
                     'payment_method': payment_method,
                     'items_count': cart.total_items,
