@@ -236,3 +236,6 @@ LOGGING = {
 STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='sk_test_...')
 STRIPE_PUBLIC_KEY = config('STRIPE_PUBLIC_KEY', default='pk_test_...')
 STRIPE_WEBHOOK_SECRET = config('STRIPE_WEBHOOK_SECRET', default='whsec_...')
+
+# OpenAI Configuration
+OPENAI_API_KEY = config('OPENAI_API_KEY', default='')

@@ -1,6 +1,7 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 from .views import CustomTokenObtainPairView, UserProfileView, health_check, dashboard_stats
+from .ai_views import chat_with_agent, process_voice_command, execute_agent_action, get_agent_suggestions
 
 urlpatterns = [
     # Autenticación
@@ -14,4 +15,10 @@ urlpatterns = [
     
     # Dashboard
     path('dashboard/stats/', dashboard_stats, name='dashboard_stats'),
+    
+    # Agente Inteligente
+    path('ai/chat/', chat_with_agent, name='ai_chat'),
+    path('ai/voice/', process_voice_command, name='ai_voice'),
+    path('ai/action/', execute_agent_action, name='ai_action'),
+    path('ai/suggestions/', get_agent_suggestions, name='ai_suggestions'),
 ]
