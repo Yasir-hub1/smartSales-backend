@@ -171,3 +171,14 @@ class SaleReceipt(BaseModel):
     
     def __str__(self):
         return f"Comprobante {self.receipt_number}"
+    
+    def generate_pdf(self):
+        """Generar PDF de la nota de venta"""
+        from .pdf_service import generate_sale_receipt_pdf
+        filepath, filename = generate_sale_receipt_pdf(self.sale)
+        
+        # Guardar el archivo en el modelo
+        with open(filepath, 'rb') as f:
+            self.pdf_file.save(filename, f, save=True)
+        
+        return self.pdf_file.url

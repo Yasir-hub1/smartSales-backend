@@ -434,6 +434,16 @@ Responde al usuario de manera natural y útil, sin mostrar código técnico.
                     price=cart_item.price
                 )
             
+            # Crear comprobante de venta
+            from apps.sales.models import SaleReceipt
+            receipt = SaleReceipt.objects.create(
+                sale=sale,
+                receipt_number=f"NV-{sale.id.hex[:8].upper()}"
+            )
+            
+            # Generar PDF
+            pdf_url = receipt.generate_pdf()
+            
             # Desactivar carrito
             cart.is_active = False
             cart.save()
@@ -448,7 +458,9 @@ Responde al usuario de manera natural y útil, sin mostrar código técnico.
                     'tax': tax,
                     'total': final_total,
                     'payment_method': payment_method,
-                    'items_count': cart.total_items
+                    'items_count': cart.total_items,
+                    'receipt_number': receipt.receipt_number,
+                    'pdf_url': pdf_url
                 }
             }
             

@@ -1,5 +1,7 @@
 from django.urls import path
 from . import views
+from .pdf_views import download_sale_receipt, get_sale_receipt_info
+from .simple_views import get_sale_data
 
 urlpatterns = [
     # Carritos
@@ -29,4 +31,11 @@ urlpatterns = [
     # Ventas públicas
     path('public-sales/', views.get_public_sales, name='get_public_sales'),
     path('sales-summary/', views.get_sales_summary, name='get_sales_summary'),
+    
+    # PDF endpoints
+    path('sales/<uuid:sale_id>/receipt/download/', download_sale_receipt, name='download_receipt'),
+    path('sales/<uuid:sale_id>/receipt/info/', get_sale_receipt_info, name='receipt_info'),
+    
+    # Simple endpoints
+    path('sales/<uuid:sale_id>/data/', get_sale_data, name='sale_data'),
 ]
