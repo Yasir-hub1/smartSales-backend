@@ -412,7 +412,7 @@ def crear_usuarios():
     usuarios_data = [
         {
             'username': 'admin',
-            'email': 'admin@smartsales365.com',
+            'email': 'admin@SmartSales365.com',
             'first_name': 'Administrador',
             'last_name': 'Sistema',
             'role': 'admin',
@@ -421,7 +421,7 @@ def crear_usuarios():
         },
         {
             'username': 'gerente',
-            'email': 'gerente@smartsales365.com',
+            'email': 'gerente@SmartSales365.com',
             'first_name': 'María',
             'last_name': 'González',
             'role': 'manager',
@@ -429,21 +429,21 @@ def crear_usuarios():
         },
         {
             'username': 'vendedor1',
-            'email': 'vendedor1@smartsales365.com',
+            'email': 'vendedor1@SmartSales365.com',
             'first_name': 'Carlos',
             'last_name': 'Rodríguez',
             'role': 'seller'
         },
         {
             'username': 'vendedor2',
-            'email': 'vendedor2@smartsales365.com',
+            'email': 'vendedor2@SmartSales365.com',
             'first_name': 'Ana',
             'last_name': 'Martínez',
             'role': 'seller'
         },
         {
             'username': 'cajero1',
-            'email': 'cajero1@smartsales365.com',
+            'email': 'cajero1@SmartSales365.com',
             'first_name': 'Luis',
             'last_name': 'Hernández',
             'role': 'cashier'

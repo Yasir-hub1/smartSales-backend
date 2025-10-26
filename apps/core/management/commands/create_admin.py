@@ -18,7 +18,7 @@ class Command(BaseCommand):
         parser.add_argument(
             '--email',
             type=str,
-            default='admin@smartsales365.com',
+            default='admin@SmartSales365.com',
             help='Email del admin'
         )
         parser.add_argument(
@@ -61,8 +61,8 @@ class Command(BaseCommand):
                 rfc='SSA123456789',
                 address='Av. Tecnología 123, Col. Digital, CDMX',
                 phone='+52 55 1234 5678',
-                email='info@smartsales365.com',
-                website='https://smartsales365.com',
+                email='info@SmartSales365.com',
+                website='https://SmartSales365.com',
                 tax_rate=16.0,
                 currency='MXN',
                 timezone='America/Mexico_City'

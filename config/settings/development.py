@@ -32,7 +32,7 @@ CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
 # Logging para desarrollo
-LOGGING['loggers']['smartsales365']['level'] = 'DEBUG'
+LOGGING['loggers']['SmartSales365']['level'] = 'DEBUG'
 
 # Django Debug Toolbar (opcional)
 if DEBUG:

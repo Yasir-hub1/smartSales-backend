@@ -30,8 +30,8 @@ def create_basic_data():
             'rfc': 'SSA123456789',
             'address': 'Av. Tecnología 123, Col. Digital, CDMX',
             'phone': '+52 55 1234 5678',
-            'email': 'info@smartsales365.com',
-            'website': 'https://smartsales365.com'
+            'email': 'info@SmartSales365.com',
+            'website': 'https://SmartSales365.com'
         }
     )
     print(f"Empresa: {'Creada' if created else 'Ya existe'}")

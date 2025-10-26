@@ -36,7 +36,7 @@ def setup_database():
         if not User.objects.filter(username='admin').exists():
             User.objects.create_superuser(
                 username='admin',
-                email='admin@smartsales365.com',
+                email='admin@SmartSales365.com',
                 password='admin123'
             )
             print("✅ Superusuario creado: admin / admin123")
@@ -69,7 +69,7 @@ def create_sample_data():
         name='SmartSales365 Demo',
         defaults={
             'description': 'Empresa de demostración',
-            'email': 'demo@smartsales365.com',
+            'email': 'demo@SmartSales365.com',
             'phone': '+52 55 1234 5678',
             'address': 'Ciudad de México, México'
         }

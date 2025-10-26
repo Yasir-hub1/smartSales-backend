@@ -12,7 +12,7 @@ STRIPE_CONFIG = {
     'currency': 'MXN',
     'country': 'MX',
     'business_name': 'SmartSales365',
-    'business_url': os.getenv('BUSINESS_URL', 'https://smartsales365.com'),
+    'business_url': os.getenv('BUSINESS_URL', 'https://SmartSales365.com'),
 }
 
 # Métodos de pago por defecto
@@ -129,7 +129,7 @@ ELEMENTS_CONFIG = {
 # Configuración de notificaciones
 NOTIFICATION_CONFIG = {
     'email_receipts': True,
-    'email_receipts_from': os.getenv('STRIPE_EMAIL_FROM', 'noreply@smartsales365.com'),
+    'email_receipts_from': os.getenv('STRIPE_EMAIL_FROM', 'noreply@SmartSales365.com'),
     'receipt_email_template': 'payment_receipt',
 }
 
@@ -183,7 +183,7 @@ REPORTING_CONFIG = {
     'daily_reports': True,
     'weekly_reports': True,
     'monthly_reports': True,
-    'report_email': os.getenv('REPORT_EMAIL', 'admin@smartsales365.com'),
+    'report_email': os.getenv('REPORT_EMAIL', 'admin@SmartSales365.com'),
 }
 
 # Configuración de desarrollo

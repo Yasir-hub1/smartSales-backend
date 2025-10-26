@@ -45,7 +45,7 @@ backend/
 1. **Clonar el repositorio**
 ```bash
 git clone <repository-url>
-cd smartsales365/backend
+cd SmartSales365/backend
 ```
 
 2. **Crear entorno virtual**
@@ -183,8 +183,8 @@ python manage.py runserver
 gunicorn config.wsgi:application
 
 # Con Docker
-docker build -t smartsales365-backend .
-docker run -p 8000:8000 smartsales365-backend
+docker build -t SmartSales365-backend .
+docker run -p 8000:8000 SmartSales365-backend
 ```
 
 ## Monitoreo

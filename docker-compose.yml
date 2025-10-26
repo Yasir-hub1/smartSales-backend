@@ -6,7 +6,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     environment:
-      - POSTGRES_DB=smartsales365
+      - POSTGRES_DB=SmartSales365
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
     ports:
@@ -26,7 +26,7 @@ services:
       - "8000:8000"
     environment:
       - DEBUG=True
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/smartsales365
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/SmartSales365
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - db
@@ -39,7 +39,7 @@ services:
       - .:/app
     environment:
       - DEBUG=True
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/smartsales365
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/SmartSales365
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - db

@@ -115,9 +115,9 @@ class SaleReceiptPDFService:
         """Crear información de la empresa"""
         elements = []
         
-        elements.append(Paragraph("SMARTSALES365", self.styles['CustomSubtitle']))
+        elements.append(Paragraph("SmartSales365", self.styles['CustomSubtitle']))
         elements.append(Paragraph("Sistema de Gestión de Ventas", self.styles['CompanyInfo']))
-        elements.append(Paragraph("Email: info@smartsales365.com", self.styles['CompanyInfo']))
+        elements.append(Paragraph("Email: info@SmartSales365.com", self.styles['CompanyInfo']))
         elements.append(Paragraph("Teléfono: +52 55 1234 5678", self.styles['CompanyInfo']))
         
         elements.append(Spacer(1, 20))

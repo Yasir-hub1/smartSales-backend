@@ -16,19 +16,64 @@ from .serializers import (
 def get_or_create_cart(request):
     """Helper para obtener o crear carrito"""
     if request.user.is_authenticated:
-        cart, created = Cart.objects.get_or_create(
-            user=request.user, 
-            is_active=True,
-            defaults={'session_key': request.session.session_key or 'anonymous'}
+        # Primero intentar obtener un carrito activo existente
+        try:
+            cart = Cart.objects.filter(
+                user=request.user, 
+                is_active=True
+            ).order_by('-created_at').first()
+            
+            if cart:
+                return cart
+        except Cart.MultipleObjectsReturned:
+            # Si hay múltiples carritos, tomar el más reciente y desactivar los otros
+            carts = Cart.objects.filter(
+                user=request.user, 
+                is_active=True
+            ).order_by('-created_at')
+            
+            cart = carts.first()
+            # Desactivar los carritos más antiguos
+            carts.exclude(id=cart.id).update(is_active=False)
+            return cart
+        
+        # Si no hay carrito activo, crear uno nuevo
+        cart = Cart.objects.create(
+            user=request.user,
+            session_key=request.session.session_key or 'anonymous',
+            is_active=True
         )
     else:
         session_key = request.session.session_key or 'anonymous'
-        cart, created = Cart.objects.get_or_create(
+        # Para usuarios anónimos, usar la misma lógica
+        try:
+            cart = Cart.objects.filter(
+                session_key=session_key,
+                is_active=True,
+                user__isnull=True
+            ).order_by('-created_at').first()
+            
+            if cart:
+                return cart
+        except Cart.MultipleObjectsReturned:
+            # Si hay múltiples carritos, tomar el más reciente y desactivar los otros
+            carts = Cart.objects.filter(
+                session_key=session_key,
+                is_active=True,
+                user__isnull=True
+            ).order_by('-created_at')
+            
+            cart = carts.first()
+            # Desactivar los carritos más antiguos
+            carts.exclude(id=cart.id).update(is_active=False)
+            return cart
+        
+        # Si no hay carrito activo, crear uno nuevo
+        cart = Cart.objects.create(
             session_key=session_key,
-            is_active=True,
-            user__isnull=True,
-            defaults={'session_key': session_key}
+            is_active=True
         )
+    
     return cart
 
 
@@ -198,7 +243,7 @@ class SaleListCreateView(generics.ListCreateAPIView):
             SaleReceipt.objects.create(
                 sale=sale,
                 receipt_number=f"NV-{sale.id}",
-                qr_code=f"https://smartsales365.com/receipt/{sale.id}"
+                qr_code=f"https://SmartSales365.com/receipt/{sale.id}"
             )
             
             return Response(SaleSerializer(sale).data, status=status.HTTP_201_CREATED)
@@ -335,7 +380,7 @@ def create_sale_from_cart(request, cart_id):
         SaleReceipt.objects.create(
             sale=sale,
             receipt_number=f"RCP-{sale.id}",
-            qr_code=f"https://smartsales365.com/receipt/{sale.id}"
+            qr_code=f"https://SmartSales365.com/receipt/{sale.id}"
         )
         
         return Response(SaleSerializer(sale).data, status=status.HTTP_201_CREATED)
@@ -441,7 +486,7 @@ def checkout_cart(request):
         SaleReceipt.objects.create(
             sale=sale,
             receipt_number=f"RCP-{sale.id}",
-            qr_code=f"https://smartsales365.com/receipt/{sale.id}"
+            qr_code=f"https://SmartSales365.com/receipt/{sale.id}"
         )
         
         return Response(SaleSerializer(sale).data, status=status.HTTP_201_CREATED)

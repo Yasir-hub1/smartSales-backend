@@ -224,7 +224,7 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
-        'smartsales365': {
+        'SmartSales365': {
             'handlers': ['console', 'file'],
             'level': 'DEBUG',
             'propagate': False,

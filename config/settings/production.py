@@ -44,7 +44,7 @@ EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
-DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@smartsales365.com')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@SmartSales365.com')
 
 # Cache para producción (Redis)
 CACHES = {
@@ -65,8 +65,8 @@ CORS_ALLOW_CREDENTIALS = True
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Logging para producción
-LOGGING['handlers']['file']['filename'] = '/var/log/smartsales365/django.log'
-LOGGING['loggers']['smartsales365']['level'] = 'INFO'
+LOGGING['handlers']['file']['filename'] = '/var/log/SmartSales365/django.log'
+LOGGING['loggers']['SmartSales365']['level'] = 'INFO'
 
 # Sentry para monitoreo (opcional)
 SENTRY_DSN = os.environ.get('SENTRY_DSN')

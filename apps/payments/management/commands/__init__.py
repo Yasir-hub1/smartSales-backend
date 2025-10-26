@@ -1,1 +1,1 @@
-# Commands directory
+# Commands for payments app

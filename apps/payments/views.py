@@ -243,6 +243,43 @@ def get_payment_methods(request):
     """Obtener métodos de pago disponibles"""
     try:
         methods = PaymentMethod.objects.filter(is_active=True).order_by('sort_order')
+        
+        # Si no hay métodos en la base de datos, devolver métodos por defecto
+        if not methods.exists():
+            default_methods = [
+                {
+                    'id': 1,
+                    'name': 'Tarjeta de Crédito/Débito',
+                    'code': 'stripe',
+                    'is_active': True,
+                    'is_online': True,
+                    'icon': 'credit-card',
+                    'description': 'Pago seguro con tarjeta de crédito o débito',
+                    'sort_order': 1
+                },
+                {
+                    'id': 2,
+                    'name': 'Efectivo',
+                    'code': 'cash',
+                    'is_active': True,
+                    'is_online': False,
+                    'icon': 'money-bill',
+                    'description': 'Pago en efectivo al recibir el producto',
+                    'sort_order': 2
+                },
+                {
+                    'id': 3,
+                    'name': 'Transferencia Bancaria',
+                    'code': 'transfer',
+                    'is_active': True,
+                    'is_online': False,
+                    'icon': 'university',
+                    'description': 'Transferencia bancaria directa',
+                    'sort_order': 3
+                }
+            ]
+            return Response(default_methods)
+        
         serializer = PaymentMethodSerializer(methods, many=True)
         return Response(serializer.data)
         
