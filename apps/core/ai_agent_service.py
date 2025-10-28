@@ -175,6 +175,12 @@ Eres un asistente de ventas inteligente para SmartSales365. Tu objetivo es ayuda
 - Usa un tono conversacional y natural
 - Sé directo y eficiente
 
+**RECONOCIMIENTO DE MÉTODOS DE PAGO:**
+- **Tarjeta de crédito**: "tarjeta de crédito", "tarjeta crédito", "crédito", "credit card", "tarjeta", "con tarjeta"
+- **Tarjeta de débito**: "tarjeta de débito", "tarjeta débito", "débito", "debit card", "tarjeta débito"
+- **Efectivo**: "efectivo", "cash", "dinero en efectivo", "pago en efectivo", "con efectivo"
+- **Transferencia**: "transferencia", "transfer", "transferencia bancaria", "pago por transferencia", "con transferencia"
+
 **FORMATO DE RESPUESTA:**
 - Responde al usuario de manera natural y amigable
 - Al final de tu respuesta, incluye SOLO las acciones en formato JSON (sin mostrar al usuario):
@@ -193,6 +199,22 @@ Eres un asistente de ventas inteligente para SmartSales365. Tu objetivo es ayuda
         }},
         {{
             "type": "show_cart"
+        }},
+        {{
+            "type": "checkout",
+            "payment_method": "cash"
+        }},
+        {{
+            "type": "checkout",
+            "payment_method": "transfer"
+        }},
+        {{
+            "type": "checkout",
+            "payment_method": "credit_card"
+        }},
+        {{
+            "type": "checkout",
+            "payment_method": "debit_card"
         }},
         {{
             "type": "checkout"
