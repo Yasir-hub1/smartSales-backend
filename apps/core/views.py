@@ -59,3 +59,56 @@ def dashboard_stats(request):
             'error': 'Error obteniendo estadísticas del dashboard',
             'detail': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def api_root(request):
+    """Vista raíz de la API que muestra todos los endpoints disponibles"""
+    return Response({
+        'message': 'Bienvenido a SmartSales365 API',
+        'version': '1.0',
+        'endpoints': {
+            'authentication': {
+                'login': request.build_absolute_uri('/api/v1/auth/login/'),
+                'refresh': request.build_absolute_uri('/api/v1/auth/refresh/'),
+                'verify': request.build_absolute_uri('/api/v1/auth/verify/'),
+                'profile': request.build_absolute_uri('/api/v1/auth/profile/'),
+            },
+            'health': request.build_absolute_uri('/api/v1/health/'),
+            'dashboard': request.build_absolute_uri('/api/v1/dashboard/stats/'),
+            'products': {
+                'list': request.build_absolute_uri('/api/v1/products/'),
+                'categories': request.build_absolute_uri('/api/v1/products/categories/'),
+                'search': request.build_absolute_uri('/api/v1/products/search/'),
+                'stats': request.build_absolute_uri('/api/v1/products/stats/'),
+            },
+            'clients': {
+                'list': request.build_absolute_uri('/api/v1/clients/'),
+                'stats': request.build_absolute_uri('/api/v1/clients/stats/'),
+                'search': request.build_absolute_uri('/api/v1/clients/search/'),
+            },
+            'sales': {
+                'list': request.build_absolute_uri('/api/v1/sales/sales/'),
+                'cart': request.build_absolute_uri('/api/v1/sales/cart/'),
+                'stats': request.build_absolute_uri('/api/v1/sales/stats/'),
+            },
+            'payments': {
+                'methods': request.build_absolute_uri('/api/v1/payments/methods/'),
+                'list': request.build_absolute_uri('/api/v1/payments/payments/'),
+            },
+            'reports': {
+                'templates': request.build_absolute_uri('/api/v1/reports/templates/'),
+                'generate': request.build_absolute_uri('/api/v1/reports/generate/'),
+            },
+            'ai': {
+                'chat': request.build_absolute_uri('/api/v1/ai/chat/'),
+                'voice': request.build_absolute_uri('/api/v1/ai/voice/'),
+                'suggestions': request.build_absolute_uri('/api/v1/ai/suggestions/'),
+            },
+            'documentation': {
+                'swagger': request.build_absolute_uri('/api/docs/'),
+                'redoc': request.build_absolute_uri('/api/redoc/'),
+                'schema': request.build_absolute_uri('/api/schema/'),
+            }
+        }
+    }, status=status.HTTP_200_OK)

@@ -1,9 +1,18 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
-from .views import CustomTokenObtainPairView, UserProfileView, health_check, dashboard_stats
+from .views import (
+    CustomTokenObtainPairView, 
+    UserProfileView, 
+    health_check, 
+    dashboard_stats,
+    api_root  # ← AGREGAR ESTE IMPORT
+)
 from .ai_views import chat_with_agent, process_voice_command, execute_agent_action, get_agent_suggestions
 
 urlpatterns = [
+    # Vista raíz de la API
+    path('', api_root, name='api_root'),  # ← AGREGAR ESTA LÍNEA PRIMERO
+    
     # Autenticación
     path('auth/login/', CustomTokenObtainPairView.as_view(), name='login'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
