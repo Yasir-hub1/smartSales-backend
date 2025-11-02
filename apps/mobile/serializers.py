@@ -64,8 +64,8 @@ class RegisterDeviceSerializer(serializers.Serializer):
 class ProductDashboardSerializer(serializers.ModelSerializer):
     """Serializer para dashboard de productos"""
     category_name = serializers.SerializerMethodField()
-    stock_status = serializers.ReadOnlyField()
-    is_low_stock = serializers.ReadOnlyField()
+    stock_status = serializers.SerializerMethodField()
+    is_low_stock = serializers.SerializerMethodField()
     
     class Meta:
         model = Product
@@ -77,6 +77,59 @@ class ProductDashboardSerializer(serializers.ModelSerializer):
     def get_category_name(self, obj):
         """Obtener nombre de categoría de forma segura"""
         return obj.category.name if obj.category else 'Sin categoría'
+    
+    def get_stock_status(self, obj):
+        """Calcular estado del stock de forma coherente"""
+        stock = int(obj.stock) if obj.stock else 0
+        min_stock = int(obj.min_stock) if obj.min_stock else 0
+        
+        if stock == 0:
+            return 'out_of_stock'
+        elif stock <= min_stock:
+            return 'low_stock'
+        else:
+            return 'in_stock'
+    
+    def get_is_low_stock(self, obj):
+        """Calcular si el stock está bajo"""
+        stock = int(obj.stock) if obj.stock else 0
+        min_stock = int(obj.min_stock) if obj.min_stock else 0
+        return stock <= min_stock and stock > 0
+    
+    def to_representation(self, instance):
+        """Asegurar que todos los valores sean coherentes"""
+        data = super().to_representation(instance)
+        
+        # CRÍTICO: Asegurar que el ID sea siempre un número entero
+        if 'id' in data:
+            try:
+                data['id'] = int(data['id'])
+            except (ValueError, TypeError):
+                # Si no se puede convertir, mantener el valor original
+                pass
+        
+        # Asegurar que el stock sea siempre un entero no negativo
+        if 'stock' in data:
+            try:
+                stock_val = data.get('stock', 0)
+                data['stock'] = max(0, int(float(stock_val)) if stock_val else 0)
+            except (ValueError, TypeError):
+                data['stock'] = 0
+        
+        # Asegurar que min_stock y max_stock sean enteros
+        if 'min_stock' in data:
+            try:
+                data['min_stock'] = max(0, int(float(data['min_stock'])) if data['min_stock'] else 0)
+            except (ValueError, TypeError):
+                data['min_stock'] = 0
+        
+        if 'max_stock' in data:
+            try:
+                data['max_stock'] = max(0, int(float(data['max_stock'])) if data['max_stock'] else 0)
+            except (ValueError, TypeError):
+                data['max_stock'] = 0
+        
+        return data
 
 
 class ProductDashboardStatsSerializer(serializers.Serializer):

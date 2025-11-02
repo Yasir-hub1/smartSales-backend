@@ -388,11 +388,45 @@ def checkout_cart(request):
     if not cart.items.exists():
         return Response({'error': 'El carrito está vacío'}, status=status.HTTP_400_BAD_REQUEST)
     
-    # Obtener información del cliente
-    client_data = request.data.get('client', {})
+    # Obtener información del cliente del request
+    # El frontend puede enviar client directamente o client.client (anidado)
+    client_data_raw = request.data.get('client', {})
+    
+    # Si client_data tiene otra propiedad 'client' dentro, usar esa
+    # Esto maneja el caso cuando el frontend envía: {client: {client: {...}}}
+    if isinstance(client_data_raw, dict) and 'client' in client_data_raw and isinstance(client_data_raw.get('client'), dict):
+        client_data = client_data_raw.get('client', {})
+    else:
+        # Si client_data ya tiene los campos directamente, usarlo
+        client_data = client_data_raw
+    
+    # Extraer todos los campos del cliente que envía el frontend
     client_name = client_data.get('name', '')
     client_email = client_data.get('email', '')
     client_phone = client_data.get('phone', '')
+    client_address = client_data.get('address', '')
+    client_city = client_data.get('city', '')
+    client_country = client_data.get('country', 'Bolivia')
+    
+    # Debug: Log para ver qué se está recibiendo
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"🔍 Datos recibidos en checkout_cart:")
+    logger.info(f"   request.data.client: {request.data.get('client')}")
+    logger.info(f"   client_data procesado: {client_data}")
+    logger.info(f"   client_name extraído: '{client_name}'")
+    
+    # Validar que se proporcione al menos el nombre
+    if not client_name:
+        logger.error(f"❌ Error: Nombre del cliente vacío. client_data completo: {client_data}")
+        return Response({
+            'error': 'El nombre del cliente es requerido',
+            'debug': {
+                'client_data_received': str(client_data),
+                'client_name_extracted': client_name,
+                'raw_client_data': str(request.data.get('client'))
+            }
+        }, status=status.HTTP_400_BAD_REQUEST)
     
     # Obtener método de pago y datos de Stripe
     payment_method = request.data.get('payment_method', 'cash')
@@ -418,27 +452,62 @@ def checkout_cart(request):
         except Client.DoesNotExist:
             pass
     
-    # Si no existe cliente, crear uno nuevo
-    if not client:
+    # Si existe cliente, actualizarlo con los datos del frontend
+    if client:
+        # Actualizar datos del cliente con la información proporcionada
+        client.name = client_name if client_name else client.name
+        if client_email:
+            client.email = client_email
+        if client_phone:
+            client.phone = client_phone
+        if client_address:
+            client.address = client_address
+        if client_city:
+            client.city = client_city
+        if client_country:
+            client.country = client_country
+        client.save()
+    else:
+        # Si no existe cliente, crear uno nuevo con todos los datos
         try:
             client = Client.objects.create(
                 name=client_name,
-                email=client_email,
-                phone=client_phone,
+                email=client_email if client_email else '',
+                phone=client_phone if client_phone else '',
+                address=client_address if client_address else '',
+                city=client_city if client_city else '',
+                country=client_country if client_country else 'Bolivia',
                 user=request.user if request.user.is_authenticated else None
             )
-        except IntegrityError:
-            # Si hay conflicto de integridad, obtener el cliente existente
-            if request.user.is_authenticated:
-                client = Client.objects.get(user=request.user)
+        except IntegrityError as e:
+            # Si hay conflicto de integridad (email duplicado), obtener el cliente existente
+            if client_email:
+                try:
+                    client = Client.objects.get(email=client_email)
+                    # Actualizar con los nuevos datos
+                    client.name = client_name if client_name else client.name
+                    if client_phone:
+                        client.phone = client_phone
+                    if client_address:
+                        client.address = client_address
+                    if client_city:
+                        client.city = client_city
+                    if client_country:
+                        client.country = client_country
+                    client.save()
+                except Client.DoesNotExist:
+                    # Si no existe por email, crear con email diferente o sin email
+                    client = Client.objects.create(
+                        name=client_name,
+                        email='',
+                        phone=client_phone if client_phone else '',
+                        address=client_address if client_address else '',
+                        city=client_city if client_city else '',
+                        country=client_country if client_country else 'Bolivia',
+                        user=request.user if request.user.is_authenticated else None
+                    )
             else:
-                # Si no está autenticado, crear sin user_id
-                client = Client.objects.create(
-                    name=client_name,
-                    email=client_email,
-                    phone=client_phone,
-                    user=None
-                )
+                raise e
     
     # Crear venta
     sale_data = {

@@ -165,8 +165,8 @@ def products_dashboard(request):
     logger = logging.getLogger(__name__)
     
     try:
-        # Obtener productos con paginación
-        products = Product.objects.filter(is_active=True).select_related('category')
+        # Obtener productos con paginación - CRÍTICO: usar distinct() para evitar duplicados
+        products = Product.objects.filter(is_active=True).select_related('category').distinct()
         
         # Filtros opcionales
         category_id = request.GET.get('category')
@@ -182,22 +182,30 @@ def products_dashboard(request):
                 Q(name__icontains=search) |
                 Q(sku__icontains=search) |
                 Q(barcode__icontains=search)
-            )
+            ).distinct()  # Asegurar no duplicados en búsqueda
         
         # Filtro de stock
         stock_filter = request.GET.get('stock_status')
         if stock_filter == 'low':
-            products = products.filter(stock__lte=F('min_stock')).exclude(stock=0)
+            products = products.filter(stock__lte=F('min_stock')).exclude(stock=0).distinct()
         elif stock_filter == 'out':
-            products = products.filter(stock=0)
+            products = products.filter(stock=0).distinct()
         
-        # Ordenamiento
+        # Ordenamiento - CRÍTICO: agregar 'id' al final para garantizar orden consistente
         ordering = request.GET.get('ordering', '-created_at')
         # Validar que el campo de ordenamiento sea válido
         valid_orderings = ['-created_at', 'created_at', '-name', 'name', '-price', 'price', '-stock', 'stock']
         if ordering not in valid_orderings:
             ordering = '-created_at'
-        products = products.order_by(ordering)
+        
+        # Agregar 'id' al ordenamiento para garantizar orden consistente y evitar duplicados
+        if 'id' not in ordering and '-id' not in ordering:
+            if ordering.startswith('-'):
+                products = products.order_by(ordering, '-id')
+            else:
+                products = products.order_by(ordering, 'id')
+        else:
+            products = products.order_by(ordering)
         
         # Contar total antes de paginar
         total_count = products.count()
@@ -255,10 +263,29 @@ def products_dashboard(request):
         
         # Serializar productos con manejo de errores
         try:
-            serializer = ProductDashboardSerializer(products_page, many=True)
+            # CRÍTICO: Eliminar duplicados antes de serializar (por si acaso)
+            seen_ids = set()
+            unique_products = []
+            for product in products_page:
+                if product.id not in seen_ids:
+                    seen_ids.add(product.id)
+                    unique_products.append(product)
+            
+            logger.info(f'📊 Productos únicos a serializar: {len(unique_products)} de {len(products_page)} recibidos')
+            
+            serializer = ProductDashboardSerializer(unique_products, many=True)
+            serializer_data = serializer.data
+            
         except Exception as e:
             logger.error(f'Error serializando productos: {str(e)}')
             # Retornar productos básicos sin serializer
+            seen_ids = set()
+            unique_products = []
+            for product in products_page:
+                if product.id not in seen_ids:
+                    seen_ids.add(product.id)
+                    unique_products.append(product)
+            
             serializer_data = [{
                 'id': p.id,
                 'name': p.name or 'Sin nombre',
@@ -271,11 +298,24 @@ def products_dashboard(request):
                 'stock_status': 'out_of_stock' if p.stock == 0 else ('low_stock' if p.stock <= p.min_stock else 'in_stock'),
                 'is_low_stock': p.stock <= p.min_stock if p.min_stock else False,
                 'is_active': p.is_active,
-            } for p in products_page]
-            serializer = type('MockSerializer', (), {'data': serializer_data})()
+            } for p in unique_products]
+        
+        # CRÍTICO: Asegurar que no haya duplicados en la respuesta final
+        final_results = []
+        seen_result_ids = set()
+        for item in serializer_data:
+            item_id = item.get('id')
+            if item_id and item_id not in seen_result_ids:
+                seen_result_ids.add(item_id)
+                # Asegurar que el stock sea coherente (entero, no negativo)
+                if 'stock' in item:
+                    item['stock'] = max(0, int(item['stock']) if item['stock'] else 0)
+                final_results.append(item)
+        
+        logger.info(f'📦 Productos finales sin duplicados: {len(final_results)}')
         
         return Response({
-            'results': serializer.data,
+            'results': final_results,
             'stats': stats,
             'pagination': {
                 'page': page,
@@ -472,7 +512,20 @@ def preview_excel(request):
 def import_products_excel(request):
     """Importar productos desde archivo Excel"""
     import logging
+    import traceback
+    from django.db import transaction
     logger = logging.getLogger(__name__)
+    
+    logger.info(f'🔔 ========== REQUEST RECIBIDO PARA IMPORTACIÓN ==========')
+    logger.info(f'🔔 Usuario: {request.user.username} (ID: {request.user.id})')
+    logger.info(f'🔔 Método: {request.method}')
+    logger.info(f'🔔 Content-Type: {request.content_type}')
+    logger.info(f'🔔 FILES keys: {list(request.FILES.keys())}')
+    logger.info(f'🔔 DATA keys: {list(request.data.keys())}')
+    
+    # CRÍTICO: Asegurar que los logs se escriban inmediatamente
+    import sys
+    sys.stdout.flush()
     
     # En DRF, request.data automáticamente combina request.POST y request.FILES
     # Para serializers con archivos, simplemente pasamos request.data
@@ -480,8 +533,15 @@ def import_products_excel(request):
     serializer = ExcelImportSerializer(data=request.data)
     
     if not serializer.is_valid():
-        logger.error(f'Errores de validación: {serializer.errors}')
-        logger.error(f'FILES disponibles: {list(request.FILES.keys())}, DATA keys: {list(request.data.keys())}')
+        logger.error(f'❌ Errores de validación del serializer: {serializer.errors}')
+        logger.error(f'❌ FILES disponibles: {list(request.FILES.keys())}')
+        logger.error(f'❌ DATA keys: {list(request.data.keys())}')
+        
+        # Log detallado de lo que se recibió
+        if request.FILES:
+            for key, file in request.FILES.items():
+                logger.error(f'❌ FILES[{key}]: name={file.name}, size={file.size}, content_type={getattr(file, "content_type", "N/A")}')
+        
         return Response({
             'error': 'Error de validación del archivo',
             'details': serializer.errors,
@@ -500,20 +560,27 @@ def import_products_excel(request):
     
     # Obtener el archivo validado del serializer
     excel_file = serializer.validated_data['file']
-    logger.info(f'Archivo recibido: {excel_file.name}, tamaño: {excel_file.size} bytes, content_type: {getattr(excel_file, "content_type", "N/A")}')
+    logger.info(f'📥 ========== INICIANDO IMPORTACIÓN DE EXCEL ==========')
+    logger.info(f'📥 Archivo recibido: {excel_file.name}')
+    logger.info(f'📥 Tamaño: {excel_file.size} bytes')
+    logger.info(f'📥 Content-Type: {getattr(excel_file, "content_type", "N/A")}')
+    logger.info(f'📥 Usuario: {request.user.username} (ID: {request.user.id})')
     
     # Validar que el nombre del archivo termine en .xlsx o .xls
     file_name_lower = excel_file.name.lower() if excel_file.name else ''
     if not file_name_lower.endswith(('.xlsx', '.xls')):
-        logger.error(f'Nombre de archivo inválido: {excel_file.name}')
+        logger.error(f'❌ Nombre de archivo inválido: {excel_file.name}')
         return Response({
             'error': f'El archivo debe tener extensión .xlsx o .xls. Archivo recibido: {excel_file.name}',
         }, status=status.HTTP_400_BAD_REQUEST)
+    
     errors = []
     successful = 0
     failed = 0
     
     try:
+        logger.info(f'📖 Leyendo archivo Excel...')
+        
         # Leer archivo Excel
         if excel_file.name.endswith('.xlsx'):
             df = pd.read_excel(excel_file, engine='openpyxl')
@@ -521,123 +588,239 @@ def import_products_excel(request):
             df = pd.read_excel(excel_file, engine='xlrd')
         
         total_rows = len(df)
+        logger.info(f'📊 Total de filas leídas: {total_rows}')
+        logger.info(f'📊 Columnas encontradas: {list(df.columns)}')
         
         # Validar columnas requeridas
         required_columns = ['name', 'sku', 'price', 'stock', 'category']
         missing_columns = [col for col in required_columns if col not in df.columns]
         
         if missing_columns:
+            logger.error(f'❌ Columnas faltantes: {missing_columns}')
             return Response({
                 'error': f'Columnas faltantes: {", ".join(missing_columns)}',
                 'required_columns': required_columns
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Procesar cada fila
-        for index, row in df.iterrows():
-            try:
-                # Validar datos requeridos primero
-                name = str(row.get('name', '')).strip()
-                sku = str(row.get('sku', '')).strip()
-                
-                # Saltar filas vacías o con instrucciones
-                if not name or not sku or pd.isna(row.get('name')) or pd.isna(row.get('sku')):
-                    continue  # Ignorar filas vacías
-                
-                # Saltar filas que parecen ser instrucciones
-                if 'INSTRUCCIONES' in name.upper() or 'REQUERIDO' in name.upper() or 'OPCIONAL' in name.upper():
-                    continue
-                
-                # Validar y convertir datos numéricos
+        logger.info(f'✅ Todas las columnas requeridas están presentes')
+        logger.info(f'🔄 Iniciando procesamiento de {total_rows} filas...')
+        
+        # Usar transacción atómica para asegurar que todos los cambios se guarden
+        with transaction.atomic():
+            # Procesar cada fila
+            for index, row in df.iterrows():
                 try:
-                    price = float(row.get('price', 0))
-                    stock = int(float(row.get('stock', 0))) if pd.notna(row.get('stock')) else 0
-                except (ValueError, TypeError):
-                    errors.append(f"Fila {index + 2}: price o stock no son números válidos")
-                    failed += 1
-                    continue
-                
-                if price <= 0:
-                    errors.append(f"Fila {index + 2}: El precio debe ser mayor a 0")
-                    failed += 1
-                    continue
-                
-                # Obtener o crear categoría
-                category_name = str(row.get('category', 'Sin categoría')).strip()
-                if not category_name or pd.isna(row.get('category')):
-                    category_name = 'Sin categoría'
-                
-                category, _ = Category.objects.get_or_create(
-                    name=category_name,
-                    defaults={'description': f'Categoría importada desde Excel'}
-                )
-                
-                # Procesar campos opcionales de forma segura
-                description = str(row.get('description', '')).strip() if pd.notna(row.get('description')) else ''
-                
-                try:
-                    cost = float(row.get('cost')) if pd.notna(row.get('cost')) and str(row.get('cost')).strip() else price * 0.7
-                except (ValueError, TypeError):
-                    cost = price * 0.7
-                
-                try:
-                    min_stock = int(float(row.get('min_stock'))) if pd.notna(row.get('min_stock')) and str(row.get('min_stock')).strip() else 10
-                except (ValueError, TypeError):
-                    min_stock = 10
-                
-                try:
-                    max_stock = int(float(row.get('max_stock'))) if pd.notna(row.get('max_stock')) and str(row.get('max_stock')).strip() else 1000
-                except (ValueError, TypeError):
-                    max_stock = 1000
-                
-                barcode = str(row.get('barcode', '')).strip() if pd.notna(row.get('barcode')) else ''
-                tags = str(row.get('tags', '')).strip() if pd.notna(row.get('tags')) else ''
-                
-                # Procesar is_digital de forma segura
-                is_digital_val = row.get('is_digital', False)
-                if pd.notna(is_digital_val):
-                    if isinstance(is_digital_val, bool):
-                        is_digital = is_digital_val
-                    elif isinstance(is_digital_val, str):
-                        is_digital = is_digital_val.lower() in ('true', '1', 'yes', 'verdadero')
+                    # Validar datos requeridos primero
+                    name = str(row.get('name', '')).strip()
+                    sku = str(row.get('sku', '')).strip()
+                    
+                    # Saltar filas vacías o con instrucciones
+                    if not name or not sku or pd.isna(row.get('name')) or pd.isna(row.get('sku')):
+                        continue  # Ignorar filas vacías
+                    
+                    # Saltar filas que parecen ser instrucciones
+                    if 'INSTRUCCIONES' in name.upper() or 'REQUERIDO' in name.upper() or 'OPCIONAL' in name.upper():
+                        continue
+                    
+                    # Validar y convertir datos numéricos
+                    try:
+                        price_raw = row.get('price', 0)
+                        stock_raw = row.get('stock', 0)
+                        
+                        # Convertir price
+                        if pd.isna(price_raw) or price_raw == '':
+                            price = 0
+                        else:
+                            price = float(price_raw)
+                        
+                        # Convertir stock - CRÍTICO: debe ser entero positivo
+                        if pd.isna(stock_raw) or stock_raw == '':
+                            stock = 0
+                        else:
+                            # Asegurar que sea entero
+                            stock_float = float(stock_raw)
+                            stock = max(0, int(stock_float))  # Asegurar que sea positivo
+                        
+                        logger.info(f"📝 Fila {index + 2}: SKU={sku}, Price={price}, Stock={stock} (raw: {stock_raw})")
+                        
+                    except (ValueError, TypeError) as e:
+                        logger.error(f"❌ Error convirtiendo números en fila {index + 2}: {e}, price_raw={price_raw}, stock_raw={stock_raw}")
+                        errors.append(f"Fila {index + 2}: price o stock no son números válidos (price={price_raw}, stock={stock_raw})")
+                        failed += 1
+                        continue
+                    
+                    if price <= 0:
+                        errors.append(f"Fila {index + 2}: El precio debe ser mayor a 0")
+                        failed += 1
+                        continue
+                    
+                    # Obtener o crear categoría
+                    category_name = str(row.get('category', 'Sin categoría')).strip()
+                    if not category_name or pd.isna(row.get('category')):
+                        category_name = 'Sin categoría'
+                    
+                    category, _ = Category.objects.get_or_create(
+                        name=category_name,
+                        defaults={'description': f'Categoría importada desde Excel'}
+                    )
+                    
+                    # Procesar campos opcionales de forma segura
+                    description = str(row.get('description', '')).strip() if pd.notna(row.get('description')) else ''
+                    
+                    try:
+                        cost = float(row.get('cost')) if pd.notna(row.get('cost')) and str(row.get('cost')).strip() else price * 0.7
+                    except (ValueError, TypeError):
+                        cost = price * 0.7
+                    
+                    try:
+                        min_stock = int(float(row.get('min_stock'))) if pd.notna(row.get('min_stock')) and str(row.get('min_stock')).strip() else 10
+                    except (ValueError, TypeError):
+                        min_stock = 10
+                    
+                    try:
+                        max_stock = int(float(row.get('max_stock'))) if pd.notna(row.get('max_stock')) and str(row.get('max_stock')).strip() else 1000
+                    except (ValueError, TypeError):
+                        max_stock = 1000
+                    
+                    barcode = str(row.get('barcode', '')).strip() if pd.notna(row.get('barcode')) else ''
+                    tags = str(row.get('tags', '')).strip() if pd.notna(row.get('tags')) else ''
+                    
+                    # Procesar is_digital de forma segura
+                    is_digital_val = row.get('is_digital', False)
+                    if pd.notna(is_digital_val):
+                        if isinstance(is_digital_val, bool):
+                            is_digital = is_digital_val
+                        elif isinstance(is_digital_val, str):
+                            is_digital = is_digital_val.lower() in ('true', '1', 'yes', 'verdadero')
+                        else:
+                            is_digital = bool(is_digital_val)
                     else:
-                        is_digital = bool(is_digital_val)
-                else:
-                    is_digital = False
+                        is_digital = False
+                    
+                    # Verificar si el producto ya existe
+                    try:
+                        product = Product.objects.get(sku=sku)
+                        created = False
+                        
+                        # ACTUALIZAR producto existente
+                        stock_before = product.stock
+                        logger.info(f"🔄 Actualizando producto existente: SKU={sku}, Stock actual={stock_before}, Stock a sumar={stock} (tipo: {type(stock)})")
+                        
+                        # Asegurar que stock sea int positivo
+                        stock_to_add = int(max(0, stock))
+                        
+                        product.name = name
+                        product.price = price
+                        # SUMAR el stock nuevo al stock existente (no reemplazar)
+                        product.stock = int(product.stock) + stock_to_add
+                        product.category = category
+                        
+                        # Actualizar otros campos si se proporcionan
+                        if description:
+                            product.description = description
+                        if cost and cost > 0:
+                            product.cost = cost
+                        if min_stock is not None:
+                            product.min_stock = int(min_stock)
+                        if max_stock is not None:
+                            product.max_stock = int(max_stock)
+                        if barcode:
+                            product.barcode = barcode
+                        if tags:
+                            product.tags = tags
+                        if pd.notna(row.get('is_digital')):
+                            product.is_digital = is_digital
+                        
+                        # Guardar explícitamente todos los campos actualizados
+                        # Usar update_fields para optimizar y asegurar que se guarden todos los cambios
+                        fields_to_update = ['name', 'price', 'stock', 'category']
+                        if description:
+                            fields_to_update.append('description')
+                        if cost and cost > 0:
+                            fields_to_update.append('cost')
+                        if min_stock is not None:
+                            fields_to_update.append('min_stock')
+                        if max_stock is not None:
+                            fields_to_update.append('max_stock')
+                        if barcode:
+                            fields_to_update.append('barcode')
+                        if tags:
+                            fields_to_update.append('tags')
+                        if pd.notna(row.get('is_digital')):
+                            fields_to_update.append('is_digital')
+                        
+                        # Guardar con update_fields explícito
+                        product.save(update_fields=fields_to_update)
+                        
+                        # CRÍTICO: Refrescar desde BD para verificar que se guardó
+                        product.refresh_from_db()
+                        
+                        logger.info(f"✅ Producto actualizado: SKU={sku}, Stock: {stock_before} + {stock_to_add} = {product.stock}")
+                        logger.info(f"   Verificado en BD después de refresh: stock={product.stock}, id={product.id}")
+                        
+                        # Verificación de integridad CRÍTICA
+                        expected_stock = stock_before + stock_to_add
+                        if product.stock != expected_stock:
+                            logger.error(f"⚠️ PROBLEMA CRÍTICO: Stock no coincidente!")
+                            logger.error(f"   Esperado: {expected_stock}, Obtenido: {product.stock}")
+                            logger.error(f"   Stock antes: {stock_before}, Stock a sumar: {stock_to_add}")
+                            
+                            # Reintentar el guardado
+                            product.stock = expected_stock
+                            product.save(update_fields=['stock'])
+                            product.refresh_from_db()
+                            logger.info(f"   Reintentado guardado. Nuevo stock: {product.stock}")
+                        else:
+                            logger.info(f"✅ VERIFICACIÓN OK: Stock coincide correctamente ({product.stock})")
+                        
+                    except Product.DoesNotExist:
+                        # CREAR nuevo producto
+                        created = True
+                        stock_initial = int(max(0, stock))
+                        logger.info(f"➕ Creando nuevo producto: SKU={sku}, Stock inicial={stock_initial} (tipo: {type(stock_initial)})")
+                        
+                        product = Product.objects.create(
+                            sku=sku,
+                            name=name,
+                            description=description,
+                            price=price,
+                            cost=cost,
+                            stock=stock_initial,
+                            min_stock=int(min_stock) if min_stock is not None else 10,
+                            max_stock=int(max_stock) if max_stock is not None else 1000,
+                            category=category,
+                            barcode=barcode,
+                            tags=tags,
+                            is_digital=is_digital,
+                        )
+                        
+                        # Verificar que se creó correctamente
+                        product.refresh_from_db()
+                        logger.info(f"✅ Producto creado: SKU={sku}, ID={product.id}, Stock={product.stock} (verificado en BD)")
+                        
+                        if product.stock != stock_initial:
+                            logger.error(f"⚠️ PROBLEMA: Stock no coincidente! Esperado: {stock_initial}, Obtenido: {product.stock}")
+                    
+                    successful += 1
                 
-                # Verificar si el producto ya existe
-                product, created = Product.objects.get_or_create(
-                    sku=sku,
-                    defaults={
-                        'name': name,
-                        'description': description,
-                        'price': price,
-                        'cost': cost,
-                        'stock': stock,
-                        'min_stock': min_stock,
-                        'max_stock': max_stock,
-                        'category': category,
-                        'barcode': barcode,
-                        'tags': tags,
-                        'is_digital': is_digital,
-                    }
-                )
-                
-                if not created:
-                    # Actualizar producto existente
-                    product.name = name
-                    product.price = price
-                    product.stock = stock
-                    product.category = category
-                    if row.get('description'):
-                        product.description = str(row['description']).strip()
-                    product.save()
-                
-                successful += 1
-                
-            except Exception as e:
-                errors.append(f"Fila {index + 2}: {str(e)}")
-                failed += 1
-                continue
+                except Exception as e:
+                    logger.error(f"❌ Error procesando fila {index + 2}: {str(e)}", exc_info=True)
+                    errors.append(f"Fila {index + 2}: {str(e)}")
+                    failed += 1
+                    continue
+        
+        # La transacción se confirma automáticamente al salir del bloque with
+        logger.info(f'💾 Transacción completada - Todos los cambios guardados en BD')
+        
+        logger.info(f'📊 ========== RESUMEN DE PROCESAMIENTO ==========')
+        logger.info(f'📊 Total filas procesadas: {total_rows}')
+        logger.info(f'✅ Exitosas: {successful}')
+        logger.info(f'❌ Fallidas: {failed}')
+        
+        if errors:
+            logger.warning(f'⚠️  Errores encontrados ({len(errors)}):')
+            for error in errors[:10]:
+                logger.warning(f'   - {error}')
         
         result = {
             'total_rows': total_rows,
@@ -646,10 +829,14 @@ def import_products_excel(request):
             'errors': errors[:50]  # Limitar a 50 errores
         }
         
+        logger.info(f'✅ ========== IMPORTACIÓN COMPLETADA ==========')
+        
         result_serializer = ExcelImportResultSerializer(result)
         return Response(result_serializer.data, status=status.HTTP_200_OK)
         
     except Exception as e:
+        logger.error(f'❌ ========== ERROR EN IMPORTACIÓN ==========')
+        logger.error(f'❌ Error: {str(e)}', exc_info=True)
         return Response({
             'error': f'Error al procesar archivo: {str(e)}',
             'traceback': traceback.format_exc() if request.user.is_staff else None
