@@ -201,6 +201,24 @@ class SaleListCreateView(generics.ListCreateAPIView):
                 qr_code=f"https://smartsales365.com/receipt/{sale.id}"
             )
             
+            # Enviar notificación push cuando la venta está completada
+            if sale.status == 'completed':
+                try:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"Venta {sale.id} completada. Enviando notificaciones...")
+                    from apps.core.services import NotificationService
+                    result = NotificationService.send_sale_notification(str(sale.id))
+                    if result:
+                        logger.info(f"Notificaciones enviadas exitosamente para venta {sale.id}")
+                    else:
+                        logger.warning(f"Notificaciones retornaron False para venta {sale.id}")
+                except Exception as notif_error:
+                    # No fallar la creación de la venta si hay error en notificaciones
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error enviando notificación de venta {sale.id}: {notif_error}", exc_info=True)
+            
             return Response(SaleSerializer(sale).data, status=status.HTTP_201_CREATED)
             
         except Exception as e:
@@ -338,6 +356,24 @@ def create_sale_from_cart(request, cart_id):
             qr_code=f"https://smartsales365.com/receipt/{sale.id}"
         )
         
+        # Enviar notificación push cuando la venta está completada
+        if sale.status == 'completed':
+            try:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"Venta {sale.id} completada (desde carrito). Enviando notificaciones...")
+                from apps.core.services import NotificationService
+                result = NotificationService.send_sale_notification(str(sale.id))
+                if result:
+                    logger.info(f"Notificaciones enviadas exitosamente para venta {sale.id}")
+                else:
+                    logger.warning(f"Notificaciones retornaron False para venta {sale.id}")
+            except Exception as notif_error:
+                # No fallar la creación de la venta si hay error en notificaciones
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error enviando notificación de venta {sale.id}: {notif_error}", exc_info=True)
+        
         return Response(SaleSerializer(sale).data, status=status.HTTP_201_CREATED)
     
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -443,6 +479,24 @@ def checkout_cart(request):
             receipt_number=f"RCP-{sale.id}",
             qr_code=f"https://smartsales365.com/receipt/{sale.id}"
         )
+        
+        # Enviar notificación push cuando la venta está completada
+        if sale.status == 'completed':
+            try:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"Venta {sale.id} completada (checkout). Enviando notificaciones...")
+                from apps.core.services import NotificationService
+                result = NotificationService.send_sale_notification(str(sale.id))
+                if result:
+                    logger.info(f"Notificaciones enviadas exitosamente para venta {sale.id}")
+                else:
+                    logger.warning(f"Notificaciones retornaron False para venta {sale.id}")
+            except Exception as notif_error:
+                # No fallar la creación de la venta si hay error en notificaciones
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error enviando notificación de venta {sale.id}: {notif_error}", exc_info=True)
         
         return Response(SaleSerializer(sale).data, status=status.HTTP_201_CREATED)
     

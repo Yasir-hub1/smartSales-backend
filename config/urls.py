@@ -37,6 +37,9 @@ urlpatterns = [
     path('api/v1/reports/', include('apps.reports.urls')),
     path('api/v1/ml/', include('apps.ml_predictions.urls')),
     path('api/v1/notifications/', include('apps.notifications.urls')),
+    
+    # API Móvil (endpoints separados para la app)
+    path('api/v1/mobile/', include('apps.mobile.urls')),
 ]
 
 # Serve media files in development

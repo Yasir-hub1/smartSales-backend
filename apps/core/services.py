@@ -362,21 +362,38 @@ class NotificationService:
         try:
             from apps.products.models import Product
             from apps.notifications.models import Notification
-            from django.contrib.auth.models import User
+            from apps.mobile.services import ExpoPushNotificationService
+            from django.contrib.auth import get_user_model
             
+            User = get_user_model()
             product = Product.objects.get(id=product_id)
             
             if product.is_low_stock:
-                # Crear notificación para administradores
+                # Crear notificación en base de datos para administradores
                 admins = User.objects.filter(is_staff=True)
+                title = f"Stock Bajo: {product.name}"
+                message = f"El producto {product.name} tiene stock bajo ({product.stock} unidades). Stock mínimo: {product.min_stock}"
                 
                 for admin in admins:
+                    # Notificación en base de datos
                     Notification.objects.create(
                         user=admin,
-                        title=f"Stock Bajo: {product.name}",
-                        message=f"El producto {product.name} tiene stock bajo ({product.stock} unidades). Stock mínimo: {product.min_stock}",
+                        title=title,
+                        message=message,
                         notification_type='warning'
                     )
+                    
+                    # Notificación push móvil
+                    try:
+                        ExpoPushNotificationService.send_to_user_devices(
+                            user_id=admin.id,
+                            title=title,
+                            message=message,
+                            data={'product_id': str(product.id), 'type': 'low_stock'},
+                            notification_type='warning'
+                        )
+                    except Exception as push_error:
+                        print(f"Error enviando push notification: {push_error}")
                 
                 return True
             
@@ -389,26 +406,83 @@ class NotificationService:
     @staticmethod
     def send_sale_notification(sale_id: str) -> bool:
         """Envía notificación de nueva venta"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         try:
             from apps.sales.models import Sale
             from apps.notifications.models import Notification
-            from django.contrib.auth.models import User
+            from apps.mobile.services import ExpoPushNotificationService
+            from django.contrib.auth import get_user_model
             
+            User = get_user_model()
             sale = Sale.objects.get(id=sale_id)
+            logger.info(f"Iniciando envío de notificación para venta {sale_id}")
             
             # Notificar a administradores
             admins = User.objects.filter(is_staff=True)
+            logger.info(f"Encontrados {admins.count()} administradores")
+            
+            if admins.count() == 0:
+                logger.warning("No hay administradores. No se enviarán notificaciones.")
+                return False
+            
+            title = "Nueva Venta"
+            message = f"Se realizó una nueva venta por ${sale.total} al cliente {sale.client.name}"
+            
+            total_push_sent = 0
+            total_push_failed = 0
             
             for admin in admins:
-                Notification.objects.create(
-                    user=admin,
-                    title="Nueva Venta",
-                    message=f"Se realizó una nueva venta por ${sale.total} al cliente {sale.client.name}",
-                    notification_type='success'
-                )
+                logger.info(f"Procesando notificación para admin: {admin.username} (ID: {admin.id})")
+                
+                # Notificación en base de datos
+                try:
+                    notification = Notification.objects.create(
+                        user=admin,
+                        title=title,
+                        message=message,
+                        notification_type='success'
+                    )
+                    logger.info(f"Notificación en BD creada: {notification.id}")
+                except Exception as db_error:
+                    logger.error(f"Error creando notificación en BD para {admin.username}: {db_error}")
+                    continue
+                
+                # Notificación push móvil
+                try:
+                    from apps.mobile.models import PushNotificationDevice
+                    devices = PushNotificationDevice.objects.filter(user=admin, is_active=True)
+                    logger.info(f"Dispositivos activos para {admin.username}: {devices.count()}")
+                    
+                    if devices.count() > 0:
+                        result = ExpoPushNotificationService.send_to_user_devices(
+                            user_id=admin.id,
+                            title=title,
+                            message=message,
+                            data={'sale_id': str(sale.id), 'type': 'new_sale'},
+                            notification_type='success'
+                        )
+                        
+                        if result.get('success'):
+                            sent = result.get('sent', 0)
+                            failed = result.get('failed', 0)
+                            total_push_sent += sent
+                            total_push_failed += failed
+                            logger.info(f"Push enviado a {admin.username}: {sent} exitoso(s), {failed} fallido(s)")
+                        else:
+                            logger.warning(f"Push falló para {admin.username}: {result.get('message', 'Error desconocido')}")
+                            total_push_failed += devices.count()
+                    else:
+                        logger.warning(f"No hay dispositivos activos para {admin.username}")
+                        
+                except Exception as push_error:
+                    logger.error(f"Error enviando push notification a {admin.username}: {push_error}", exc_info=True)
+                    total_push_failed += 1
             
+            logger.info(f"Notificaciones completadas: {total_push_sent} push enviado(s), {total_push_failed} fallido(s)")
             return True
             
         except Exception as e:
-            print(f"Error enviando notificación de venta: {e}")
+            logger.error(f"Error enviando notificación de venta: {e}", exc_info=True)
             return False

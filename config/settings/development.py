@@ -7,13 +7,20 @@ from decouple import config
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0',"192.168.100.194"]
 
-# Database para desarrollo - SQLite (temporal para pruebas)
+# Database para desarrollo - PostgreSQL
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ.get('DB_NAME', 'salesmart'),
+        'USER': os.environ.get('DB_USER', 'defectdojo'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', '12345678'),
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', '5433'),
+        'OPTIONS': {
+            'client_encoding': 'UTF8',
+        },
     }
 }
 
