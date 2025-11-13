@@ -168,22 +168,89 @@ class ReportPromptParser:
                         continue
         
         if not date_found:
-            # Detectar meses
             month_patterns = {
                 'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4,
                 'mayo': 5, 'junio': 6, 'julio': 7, 'agosto': 8,
                 'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12
             }
-            for month_name, month_num in month_patterns.items():
-                if month_name in prompt_lower:
-                    current_year = timezone.now().year
-                    start_date = datetime(current_year, month_num, 1).date()
-                    if month_num == 12:
-                        end_date = datetime(current_year + 1, 1, 1).date() - timedelta(days=1)
-                    else:
-                        end_date = datetime(current_year, month_num + 1, 1).date() - timedelta(days=1)
-                    result['date_range'] = (start_date, end_date)
-                break
+            
+            # PRIMERO: Buscar meses específicos con múltiples patrones
+            # Prioridad: meses específicos sobre "mes actual"
+            detected_month = None
+            detected_month_num = None
+            
+            # Patrón 1: "de/del/en [mes]" - más común (ej: "ventas de octubre")
+            pattern1 = re.search(r'(?:^|\s)(?:de|del|en)\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)(?:\s|$|de|del)', prompt_lower)
+            if pattern1:
+                found_month = pattern1.group(1)
+                if found_month in month_patterns:
+                    detected_month = found_month
+                    detected_month_num = month_patterns[found_month]
+                    print(f"🔍 Patrón 1 detectado: '{found_month}' en '{prompt}'")
+            
+            # Patrón 2: "[mes] de/del" - menos común pero posible
+            if not detected_month:
+                pattern2 = re.search(r'(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+(?:de|del)(?:\s|$)', prompt_lower)
+                if pattern2:
+                    found_month = pattern2.group(1)
+                    if found_month in month_patterns:
+                        detected_month = found_month
+                        detected_month_num = month_patterns[found_month]
+                        print(f"🔍 Patrón 2 detectado: '{found_month}' en '{prompt}'")
+            
+            # Patrón 3: "[mes]" al final o solo - último recurso
+            if not detected_month:
+                pattern3 = re.search(r'(?:^|\s)(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)(?:\s|$)', prompt_lower)
+                if pattern3:
+                    found_month = pattern3.group(1)
+                    # Verificar que no sea parte de "mes actual"
+                    if found_month in month_patterns and not re.search(r'mes\s+actual|este\s+mes', prompt_lower):
+                        detected_month = found_month
+                        detected_month_num = month_patterns[found_month]
+                        print(f"🔍 Patrón 3 detectado: '{found_month}' en '{prompt}'")
+            
+            # Si se detectó un mes específico, usarlo (tiene prioridad)
+            if detected_month:
+                current_year = timezone.now().year
+                start_date = datetime(current_year, detected_month_num, 1).date()
+                if detected_month_num == 12:
+                    end_date = datetime(current_year + 1, 1, 1).date() - timedelta(days=1)
+                else:
+                    end_date = datetime(current_year, detected_month_num + 1, 1).date() - timedelta(days=1)
+                result['date_range'] = (start_date, end_date)
+                print(f"✅ Mes específico detectado: {detected_month} ({detected_month_num}). Rango: {start_date} a {end_date}")
+                date_found = True
+            
+            # SOLO si NO se detectó un mes específico, buscar "mes actual"
+            if not date_found:
+                # Patrones para "mes actual" - solo si no hay mes específico
+                current_month_patterns = [
+                    r'(?:^|\s)mes\s+actual(?:\s|$)',
+                    r'(?:^|\s)este\s+mes(?:\s|$)',
+                    r'(?:^|\s)mes\s+corriente(?:\s|$)',
+                    r'(?:^|\s)mes\s+presente(?:\s|$)',
+                    r'current\s+month'
+                ]
+                
+                for pattern in current_month_patterns:
+                    if re.search(pattern, prompt_lower):
+                        now = timezone.now()
+                        current_year = now.year
+                        current_month = now.month
+                        start_date = datetime(current_year, current_month, 1).date()
+                        if current_month == 12:
+                            end_date = datetime(current_year + 1, 1, 1).date() - timedelta(days=1)
+                        else:
+                            end_date = datetime(current_year, current_month + 1, 1).date() - timedelta(days=1)
+                        result['date_range'] = (start_date, end_date)
+                        print(f"✅ Mes actual detectado ({current_month}). Rango: {start_date} a {end_date}")
+                        date_found = True
+                        break
+        
+        # Log si no se detectó ninguna fecha
+        if not date_found:
+            print(f"⚠️ No se detectó ninguna fecha en el prompt: '{prompt}'")
+            print(f"   Se mostrarán TODAS las ventas (sin filtro de fecha)")
         
         # Detectar agrupación SOLO si se especifica explícitamente
         if re.search(r'agrupado.*producto|agrupa.*producto|por producto', prompt_lower):
@@ -247,7 +314,6 @@ class DynamicReportGenerator:
             print(f"Aplicando filtro de fecha específica: {specific_date}")
             # Usar filtro de rango para un día específico con timezone
             from datetime import timedelta
-            from django.utils import timezone
             
             start_datetime = timezone.make_aware(datetime.combine(specific_date, datetime.min.time()))
             end_datetime = start_datetime + timedelta(days=1)
@@ -267,15 +333,61 @@ class DynamicReportGenerator:
                 print(f"✅ Filtro aplicado correctamente: {queryset.count()} ventas encontradas")
         elif params.get('date_range'):
             start_date, end_date = params['date_range']
-            print(f"Aplicando filtro de rango de fechas: {start_date} a {end_date}")
-            queryset = queryset.filter(created_at__date__range=[start_date, end_date])
-            print(f"Después de filtro de rango de fechas: {queryset.count()} ventas")
+            print(f"📅 Aplicando filtro de rango de fechas: {start_date} a {end_date}")
+            print(f"   Tipo start_date: {type(start_date)}, Tipo end_date: {type(end_date)}")
+            
+            # Convertir fechas a datetime con timezone para filtrado correcto
+            # start_date debe ser el inicio del primer día del mes
+            start_datetime = timezone.make_aware(datetime.combine(start_date, datetime.min.time()))
+            
+            # end_date debe ser el inicio del primer día del mes siguiente (exclusivo)
+            # end_date ya es el último día del mes, así que sumamos 1 día para obtener el inicio del mes siguiente
+            if end_date.month == 12:
+                next_month_start = datetime(end_date.year + 1, 1, 1, 0, 0, 0)
+            else:
+                next_month_start = datetime(end_date.year, end_date.month + 1, 1, 0, 0, 0)
+            
+            end_datetime = timezone.make_aware(next_month_start)
+            
+            print(f"🔍 Rango de filtro (datetime):")
+            print(f"   Desde: {start_datetime} (inclusive)")
+            print(f"   Hasta: {end_datetime} (exclusivo)")
+            print(f"   Esto filtra desde {start_date} hasta {end_date} inclusive")
+            
+            # Obtener algunas ventas de ejemplo antes del filtro para debugging
+            sample_before = queryset.order_by('-created_at')[:5]
+            print(f"📊 Ejemplo de ventas antes del filtro (últimas 5):")
+            for sale in sample_before:
+                print(f"   - {sale.created_at.date()} ({sale.created_at}) - Total: {sale.total}")
+            
+            queryset = queryset.filter(
+                created_at__gte=start_datetime,
+                created_at__lt=end_datetime
+            )
+            
+            count_after = queryset.count()
+            print(f"📊 Después de filtro de rango de fechas: {count_after} ventas")
+            
+            # Mostrar algunas ventas después del filtro para verificar
+            if count_after > 0:
+                sample_after = queryset.order_by('-created_at')[:5]
+                print(f"📊 Ejemplo de ventas después del filtro (últimas 5):")
+                for sale in sample_after:
+                    print(f"   - {sale.created_at.date()} ({sale.created_at}) - Total: {sale.total}")
             
             # Verificar que el filtro se aplicó correctamente
-            if queryset.count() == 0:
+            if count_after == 0:
                 print("⚠️ No se encontraron ventas en el rango de fechas especificado")
+                print(f"   Verificando si hay ventas en la base de datos...")
+                all_sales = Sale.objects.all()
+                print(f"   Total de ventas en BD: {all_sales.count()}")
+                if all_sales.exists():
+                    first_sale = all_sales.order_by('created_at').first()
+                    last_sale = all_sales.order_by('-created_at').first()
+                    print(f"   Primera venta: {first_sale.created_at.date()} ({first_sale.created_at})")
+                    print(f"   Última venta: {last_sale.created_at.date()} ({last_sale.created_at})")
             else:
-                print(f"✅ Filtro aplicado correctamente: {queryset.count()} ventas encontradas")
+                print(f"✅ Filtro aplicado correctamente: {count_after} ventas encontradas")
         
         # SOLO agrupar si se especifica explícitamente en el prompt
         if params.get('group_by') == 'product':
@@ -289,56 +401,73 @@ class DynamicReportGenerator:
             return self._get_sales_list(queryset, params)
     
     def _group_sales_by_product(self, queryset, params: Dict[str, Any]) -> List[Dict]:
-        """Agrupa ventas por producto"""
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT 
-                    p.name as producto,
-                    p.sku,
-                    SUM(si.quantity) as cantidad_vendida,
-                    SUM(si.quantity * si.price) as total_vendido,
-                    COUNT(DISTINCT s.id) as numero_ventas
-                FROM sales_saleitem si
-                JOIN sales_sale s ON si.sale_id = s.id
-                JOIN products_product p ON si.product_id = p.id
-                WHERE s.created_at::date >= %s AND s.created_at::date <= %s
-                GROUP BY p.id, p.name, p.sku
-                ORDER BY total_vendido DESC
-            """, [params['date_range'][0], params['date_range'][1]] if params['date_range'] else [None, None])
-            
-            columns = [col[0] for col in cursor.description]
-            results = [dict(zip(columns, row)) for row in cursor.fetchall()]
-            
-            if params['limit']:
-                results = results[:params['limit']]
-            
-            return results
+        """Agrupa ventas por producto usando el queryset filtrado"""
+        from django.db.models import Sum, Count, F
+        
+        # Obtener los IDs de las ventas del queryset filtrado
+        sale_ids = list(queryset.values_list('id', flat=True))
+        
+        if not sale_ids:
+            return []
+        
+        # Agrupar por producto usando los IDs filtrados
+        from apps.sales.models import SaleItem
+        results = SaleItem.objects.filter(
+            sale_id__in=sale_ids
+        ).values(
+            'product__name', 'product__sku'
+        ).annotate(
+            cantidad_vendida=Sum('quantity'),
+            total_vendido=Sum(F('quantity') * F('price')),
+            numero_ventas=Count('sale_id', distinct=True)
+        ).order_by('-total_vendido')
+        
+        # Convertir a formato de diccionario
+        formatted_results = []
+        for item in results:
+            formatted_results.append({
+                'producto': item['product__name'],
+                'sku': item['product__sku'],
+                'cantidad_vendida': item['cantidad_vendida'],
+                'total_vendido': float(item['total_vendido'] or 0),
+                'numero_ventas': item['numero_ventas']
+            })
+        
+        if params.get('limit'):
+            formatted_results = formatted_results[:params['limit']]
+        
+        return formatted_results
     
     def _group_sales_by_client(self, queryset, params: Dict[str, Any]) -> List[Dict]:
-        """Agrupa ventas por cliente"""
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT 
-                    c.name as cliente,
-                    c.email,
-                    COUNT(s.id) as numero_compras,
-                    SUM(s.total) as monto_total,
-                    MIN(s.created_at::date) as primera_compra,
-                    MAX(s.created_at::date) as ultima_compra
-                FROM sales_sale s
-                JOIN clients_client c ON s.client_id = c.id
-                WHERE s.created_at::date >= %s AND s.created_at::date <= %s
-                GROUP BY c.id, c.name, c.email
-                ORDER BY monto_total DESC
-            """, [params['date_range'][0], params['date_range'][1]] if params['date_range'] else [None, None])
-            
-            columns = [col[0] for col in cursor.description]
-            results = [dict(zip(columns, row)) for row in cursor.fetchall()]
-            
-            if params['limit']:
-                results = results[:params['limit']]
-            
-            return results
+        """Agrupa ventas por cliente usando el queryset filtrado"""
+        from django.db.models import Sum, Count, Min, Max
+        
+        # Agrupar por cliente usando el queryset filtrado
+        results = queryset.values(
+            'client__name', 'client__email'
+        ).annotate(
+            numero_compras=Count('id'),
+            monto_total=Sum('total'),
+            primera_compra=Min('created_at'),
+            ultima_compra=Max('created_at')
+        ).order_by('-monto_total')
+        
+        # Convertir a formato de diccionario
+        formatted_results = []
+        for item in results:
+            formatted_results.append({
+                'cliente': item['client__name'] or 'Anónimo',
+                'email': item['client__email'] or '',
+                'numero_compras': item['numero_compras'],
+                'monto_total': float(item['monto_total']),
+                'primera_compra': item['primera_compra'].strftime('%d/%m/%Y') if item['primera_compra'] else 'N/A',
+                'ultima_compra': item['ultima_compra'].strftime('%d/%m/%Y') if item['ultima_compra'] else 'N/A'
+            })
+        
+        if params.get('limit'):
+            formatted_results = formatted_results[:params['limit']]
+        
+        return formatted_results
     
     def _get_sales_list(self, queryset, params: Dict[str, Any]) -> List[Dict]:
         """Obtiene lista de ventas"""

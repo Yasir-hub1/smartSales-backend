@@ -16,20 +16,68 @@ from .serializers import (
 def get_or_create_cart(request):
     """Helper para obtener o crear carrito"""
     if request.user.is_authenticated:
-        cart, created = Cart.objects.get_or_create(
-            user=request.user, 
-            is_active=True,
-            defaults={'session_key': request.session.session_key or 'anonymous'}
-        )
+        # Para usuarios autenticados, buscar carrito activo del usuario
+        try:
+            cart = Cart.objects.filter(
+                user=request.user, 
+                is_active=True
+            ).order_by('-created_at').first()
+            
+            if cart:
+                return cart
+            
+            # Si no existe, crear uno nuevo
+            cart = Cart.objects.create(
+                user=request.user,
+                is_active=True,
+                session_key=request.session.session_key or 'anonymous'
+            )
+            return cart
+        except Cart.MultipleObjectsReturned:
+            # Si hay múltiples, tomar el más reciente y desactivar los demás
+            carts = Cart.objects.filter(
+                user=request.user,
+                is_active=True
+            ).order_by('-created_at')
+            
+            cart = carts.first()
+            # Desactivar los demás carritos
+            carts.exclude(id=cart.id).update(is_active=False)
+            return cart
     else:
+        # Para usuarios anónimos, usar session_key
         session_key = request.session.session_key or 'anonymous'
-        cart, created = Cart.objects.get_or_create(
-            session_key=session_key,
-            is_active=True,
-            user__isnull=True,
-            defaults={'session_key': session_key}
-        )
-    return cart
+        
+        try:
+            # Intentar obtener el carrito más reciente
+            cart = Cart.objects.filter(
+                session_key=session_key,
+                is_active=True,
+                user__isnull=True
+            ).order_by('-created_at').first()
+            
+            if cart:
+                return cart
+            
+            # Si no existe, crear uno nuevo
+            cart = Cart.objects.create(
+                session_key=session_key,
+                is_active=True,
+                user=None
+            )
+            return cart
+        except Cart.MultipleObjectsReturned:
+            # Si hay múltiples, tomar el más reciente y desactivar los demás
+            carts = Cart.objects.filter(
+                session_key=session_key,
+                is_active=True,
+                user__isnull=True
+            ).order_by('-created_at')
+            
+            cart = carts.first()
+            # Desactivar los demás carritos
+            carts.exclude(id=cart.id).update(is_active=False)
+            return cart
 
 
 class CartListCreateView(generics.ListCreateAPIView):
@@ -164,20 +212,46 @@ class SaleListCreateView(generics.ListCreateAPIView):
     def create(self, request, *args, **kwargs):
         """Crear venta con manejo de cliente"""
         try:
+            import logging
+            logger = logging.getLogger(__name__)
+            
             # Obtener datos del request
             data = request.data.copy()
             client_data = data.get('client', {})
             
+            logger.info(f"📝 Creando venta - Datos recibidos:")
+            logger.info(f"   client_data: {client_data}")
+            logger.info(f"   Tipo de client_data: {type(client_data)}")
+            
             # Si se proporciona información del cliente, crear o obtener cliente
             if isinstance(client_data, dict) and client_data.get('name'):
+                logger.info(f"   ✅ Cliente detectado como diccionario con nombre: {client_data.get('name')}")
                 client = self._get_or_create_client(client_data)
+                logger.info(f"   ✅ Cliente obtenido/creado: ID={client.id}, Nombre={client.name}, Email={client.email}")
                 data['client'] = client.id
             elif isinstance(client_data, (int, str)):
                 # Si es un ID, verificar que existe
+                logger.info(f"   Cliente detectado como ID: {client_data}")
                 try:
                     client = Client.objects.get(id=client_data)
+                    logger.info(f"   ✅ Cliente encontrado: ID={client.id}, Nombre={client.name}")
                 except Client.DoesNotExist:
+                    logger.error(f"   ❌ Cliente no encontrado con ID: {client_data}")
                     return Response({'error': 'Cliente no encontrado'}, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                logger.warning(f"   ⚠️ Cliente no válido o vacío. client_data: {client_data}")
+                # Si no hay cliente, crear uno anónimo
+                client = Client.objects.create(
+                    name='Cliente Anónimo',
+                    email='',
+                    phone='',
+                    address='',
+                    city='',
+                    country='México',
+                    user=None
+                )
+                logger.info(f"   ✅ Cliente anónimo creado: ID={client.id}")
+                data['client'] = client.id
             
             # Calcular totales si no se proporcionan
             if 'items' in data and not data.get('total'):
@@ -193,6 +267,15 @@ class SaleListCreateView(generics.ListCreateAPIView):
             serializer = self.get_serializer(data=data)
             serializer.is_valid(raise_exception=True)
             sale = serializer.save(user=request.user)
+            
+            # Verificar que el cliente se asoció correctamente
+            logger.info(f"✅ Venta creada: ID={sale.id}")
+            logger.info(f"   Cliente asociado: ID={sale.client.id if sale.client else 'None'}, Nombre={sale.client.name if sale.client else 'None'}")
+            logger.info(f"   Total: {sale.total}, Items: {sale.items.count()}")
+            
+            # Refrescar la venta desde la BD para asegurar que tenemos los datos actualizados
+            sale.refresh_from_db()
+            logger.info(f"   Después de refresh - Cliente: ID={sale.client.id if sale.client else 'None'}, Nombre={sale.client.name if sale.client else 'None'}")
             
             # Crear comprobante
             SaleReceipt.objects.create(
@@ -219,29 +302,80 @@ class SaleListCreateView(generics.ListCreateAPIView):
                     logger = logging.getLogger(__name__)
                     logger.error(f"Error enviando notificación de venta {sale.id}: {notif_error}", exc_info=True)
             
-            return Response(SaleSerializer(sale).data, status=status.HTTP_201_CREATED)
+            # Serializar la venta con el cliente incluido
+            sale_serializer = SaleSerializer(sale)
+            sale_data = sale_serializer.data
+            
+            logger.info(f"📤 Datos de la venta a retornar:")
+            logger.info(f"   ID: {sale_data.get('id')}")
+            logger.info(f"   Cliente ID: {sale_data.get('client')}")
+            logger.info(f"   Cliente Nombre: {sale_data.get('client_name')}")
+            logger.info(f"   Total: {sale_data.get('total')}")
+            
+            return Response(sale_data, status=status.HTTP_201_CREATED)
             
         except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"❌ Error creando venta: {str(e)}", exc_info=True)
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     
     def _get_or_create_client(self, client_data):
         """Obtener o crear cliente"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"🔍 _get_or_create_client - Datos recibidos: {client_data}")
+        
+        # Validar que tenemos al menos el nombre
+        if not client_data.get('name'):
+            logger.error(f"❌ No se proporcionó nombre del cliente")
+            raise ValueError('El nombre del cliente es requerido')
+        
         try:
-            # Buscar por email primero
+            # Buscar por email primero si se proporciona
             if client_data.get('email'):
-                client = Client.objects.get(email=client_data['email'])
-                # Actualizar datos si es necesario
-                if client_data.get('name') and client.name != client_data['name']:
-                    client.name = client_data['name']
-                if client_data.get('phone') and client.phone != client_data['phone']:
-                    client.phone = client_data['phone']
-                client.save()
-                return client
-        except Client.DoesNotExist:
-            pass
+                logger.info(f"   Buscando cliente por email: {client_data['email']}")
+                try:
+                    client = Client.objects.get(email=client_data['email'])
+                    logger.info(f"   ✅ Cliente encontrado por email: ID={client.id}, Nombre={client.name}")
+                    
+                    # Actualizar datos si es necesario
+                    updated = False
+                    if client_data.get('name') and client.name != client_data['name']:
+                        logger.info(f"   Actualizando nombre: '{client.name}' -> '{client_data['name']}'")
+                        client.name = client_data['name']
+                        updated = True
+                    if client_data.get('phone') and client.phone != client_data['phone']:
+                        logger.info(f"   Actualizando teléfono: '{client.phone}' -> '{client_data['phone']}'")
+                        client.phone = client_data['phone']
+                        updated = True
+                    if client_data.get('address') and client.address != client_data['address']:
+                        client.address = client_data['address']
+                        updated = True
+                    if client_data.get('city') and client.city != client_data['city']:
+                        client.city = client_data['city']
+                        updated = True
+                    if client_data.get('country') and client.country != client_data['country']:
+                        client.country = client_data['country']
+                        updated = True
+                    
+                    if updated:
+                        client.save()
+                        logger.info(f"   ✅ Cliente actualizado")
+                    
+                    return client
+                except Client.DoesNotExist:
+                    logger.info(f"   Cliente no encontrado por email, creando nuevo")
+            else:
+                logger.info(f"   No se proporcionó email, creando nuevo cliente")
+        except Exception as e:
+            logger.error(f"   ❌ Error buscando cliente: {str(e)}")
+            # Continuar para crear nuevo cliente
         
         # Si no existe, crear nuevo cliente
-        return Client.objects.create(
+        logger.info(f"   Creando nuevo cliente con nombre: {client_data.get('name')}")
+        new_client = Client.objects.create(
             name=client_data.get('name', 'Cliente'),
             email=client_data.get('email', ''),
             phone=client_data.get('phone', ''),
@@ -250,6 +384,8 @@ class SaleListCreateView(generics.ListCreateAPIView):
             country=client_data.get('country', 'México'),
             user=None  # Cliente administrativo
         )
+        logger.info(f"   ✅ Nuevo cliente creado: ID={new_client.id}, Nombre={new_client.name}, Email={new_client.email}")
+        return new_client
 
 
 class SaleDetailView(generics.RetrieveUpdateDestroyAPIView):

@@ -84,14 +84,28 @@ class CreateSaleItemSerializer(serializers.Serializer):
 class SaleSerializer(serializers.ModelSerializer):
     """Serializer para ventas"""
     items = SaleItemSerializer(many=True, read_only=True)
-    client_name = serializers.CharField(source='client.name', read_only=True)
+    client_name = serializers.SerializerMethodField()
+    client_email = serializers.SerializerMethodField()
+    client_phone = serializers.SerializerMethodField()
     user_name = serializers.CharField(source='user.get_full_name', read_only=True)
     total_items = serializers.ReadOnlyField()
+    
+    def get_client_name(self, obj):
+        """Obtener nombre del cliente"""
+        return obj.client.name if obj.client else 'Cliente Anónimo'
+    
+    def get_client_email(self, obj):
+        """Obtener email del cliente"""
+        return obj.client.email if obj.client and obj.client.email else None
+    
+    def get_client_phone(self, obj):
+        """Obtener teléfono del cliente"""
+        return obj.client.phone if obj.client and obj.client.phone else None
     
     class Meta:
         model = Sale
         fields = [
-            'id', 'client', 'client_name', 'user', 'user_name', 'subtotal',
+            'id', 'client', 'client_name', 'client_email', 'client_phone', 'user', 'user_name', 'subtotal',
             'tax', 'discount', 'total', 'status', 'payment_status', 'notes',
             'transaction_id', 'items', 'total_items', 'created_at', 'updated_at'
         ]
